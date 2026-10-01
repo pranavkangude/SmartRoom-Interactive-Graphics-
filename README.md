@@ -44,9 +44,11 @@ SmartRoom lets you define a room to scale, place furniture in it, and rearrange 
 3. Compile (PowerShell; the quotes are needed because the folder name contains dots):
 
 ```
-g++ main.cpp -o smartroom.exe "-Ifreeglut-mingw-3.8.0/freeglut/include" "-Lfreeglut-mingw-3.8.0/freeglut/lib" -lfreeglut -lopengl32 -lglu32
+g++ main.cpp state.cpp transform.cpp collision.cpp gfx.cpp furniture.cpp room.cpp history.cpp fileio.cpp ui.cpp interaction.cpp -o smartroom.exe "-Ifreeglut-mingw-3.8.0/freeglut/include" "-Lfreeglut-mingw-3.8.0/freeglut/lib" -lfreeglut -lopengl32 -lglu32
 .\smartroom.exe
 ```
+
+Or simply run `.\build.bat`.
 
 For a 64-bit compiler, use `freeglut/lib/x64` and the DLL from `bin/x64`.
 
@@ -54,11 +56,27 @@ For a 64-bit compiler, use `freeglut/lib/x64` and the DLL from `bin/x64`.
 
 ```
 sudo apt install build-essential freeglut3-dev
-g++ main.cpp -o smartroom -lGL -lGLU -lglut
+g++ main.cpp state.cpp transform.cpp collision.cpp gfx.cpp furniture.cpp room.cpp history.cpp fileio.cpp ui.cpp interaction.cpp -o smartroom -lGL -lGLU -lglut
 ./smartroom
 ```
 
 The program asks for the room width and length in feet (for example `12` and `10`) when it starts.
+
+## Code structure
+
+| File | Module | Responsibility |
+|---|---|---|
+| `main.cpp` | Application | Window setup, display and reshape callbacks, main loop |
+| `common.h`, `state.cpp` | Shared data | `Furniture` and `Vec2` types, global state |
+| `transform.h/.cpp` | Transformation | Rotation about a centre, corners, picking, window-to-viewport mapping, zoom and pan |
+| `collision.h/.cpp` | Collision | Boundary check, SAT overlap, door-swing clearance, `isValid` |
+| `room.h/.cpp` | Room | Floor, grid, walls, door and window |
+| `furniture.h/.cpp` | Furniture | Furniture sizes, colours and drawing |
+| `interaction.h/.cpp` | Interaction | Mouse, wheel and keyboard callbacks, adding items |
+| `history.h/.cpp` | Undo / redo | Snapshot stacks |
+| `fileio.h/.cpp` | File | Save and load `layout.txt` |
+| `ui.h/.cpp` | UI | On-screen status and help text |
+| `gfx.h/.cpp` | Drawing helpers | Rectangles, ellipses, text |
 
 ## Computer graphics concepts demonstrated
 
@@ -79,7 +97,7 @@ The program asks for the room width and length in feet (for example `12` and `10
 - [x] M1-M3: window, scaled room, grid, door, window, furniture drawing
 - [x] M4-M6: transformations, mouse and keyboard interaction, snap-to-grid, boundary and collision checks
 - [x] M7: undo/redo, save/load, zoom and pan, door clearance zone
-- [ ] Split code into modules (room, furniture, collision, interaction, file I/O)
+- [x] Code split into modules (see Code structure)
 - [ ] Furniture palette and wall dimension labels
 - [ ] Report, screenshots and demo video
 
@@ -91,4 +109,4 @@ The program asks for the room width and length in feet (for example `12` and `10
 
 ## Author
 
-Pranav Kangude - Computer Graphics course project
+Pranav - Computer Graphics course project
