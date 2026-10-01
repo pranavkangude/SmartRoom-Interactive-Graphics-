@@ -1,0 +1,6 @@
+*.exe
+*.o
+layout.txt
+freeglut-mingw-3.8.0/
+libfreeglut.dll
+.vscode/
