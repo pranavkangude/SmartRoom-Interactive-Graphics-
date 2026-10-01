@@ -1,18 +1,20 @@
 // ============================================================
 //  SmartRoom - 2D Room & Furniture Layout Planner
-//  C++ / OpenGL (FreeGLUT)
-//  Covers milestones M1-M6:
+//  C++ / OpenGL (FreeGLUT)             *** Version 2 (M1 - M7) ***
 //    M1 window + 2D coordinate system     M2 scaled room, grid, door, window
 //    M3 furniture drawing                 M4 translate / rotate / scale
 //    M5 mouse picking, dragging, keys     M6 snap-to-grid + boundary/collision (SAT)
+//    M7 NEW: undo/redo, save/load, zoom & pan, door-swing clearance zone
 //
-//  Build (Linux):   g++ main.cpp -o smartroom -lGL -lGLU -lglut
-//  Build (MSYS2):   g++ main.cpp -o smartroom -lfreeglut -lopengl32 -lglu32
+//  Build (your setup, PowerShell):
+//  g++ main.cpp -o smartroom.exe "-Ifreeglut-mingw-3.8.0/freeglut/include" "-Lfreeglut-mingw-3.8.0/freeglut/lib" -lfreeglut -lopengl32 -lglu32
 // ============================================================
-#include <GL/glut.h>
+#include <GL/freeglut.h>   // freeglut.h (not glut.h) declares glutMouseWheelFunc
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <fstream>
+#include <iomanip>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -36,32 +38,66 @@ struct Vec2 { float x, y; };
 // ---------------------- Global state -------------------------
 int   winW = 1000, winH = 700;
 float roomW = 12.0f, roomL = 10.0f;      // room size in feet
-float scaleF = 1.0f, offX = 0, offY = 0; // world -> screen (pixels per foot, origin offset)
+
+// view (window-to-viewport mapping + zoom/pan)
+float baseScale = 1, baseOffX = 0, baseOffY = 0;   // "fit room in window" view
+float zoom = 1, panX = 0, panY = 0;                // user zoom and pan (pixels)
+float scaleF = 1, offX = 0, offY = 0;              // final world -> screen mapping
+bool  panning = false;
+int   lastMX = 0, lastMY = 0;
+
 float gridSize = 0.5f;                   // snap step in feet
 bool  snapOn = true;
 
+// door (bottom wall): hinge at DOOR_X, opening width DOOR_W, swings inside the room
+const float DOOR_X = 1.5f, DOOR_W = 3.0f;
+bool  doorClear = true;                  // door-swing clearance zone on/off
+
 vector<Furniture> items;
 int   sel = -1;
-bool  dragging = false;
+bool  dragging = false, dragMoved = false;
 float dragDX = 0, dragDY = 0;            // offset between mouse and item centre
 float backX = 0, backY = 0;              // position before drag (to revert if invalid)
 string statusMsg = "Press 1-6 to add furniture. Click an item to select it.";
 
-// ---------------------- M2: view mapping ---------------------
+// undo / redo stacks (each entry = full snapshot of the layout)
+vector< vector<Furniture> > undoStack, redoStack;
+
+Furniture makeItem(int type);            // forward declaration
+
+// ---------------------- M2/M7: view mapping ------------------
+void applyView() {
+    scaleF = baseScale * zoom;
+    offX = baseOffX + panX;
+    offY = baseOffY + panY;
+}
+
 // Window-to-viewport mapping: fit the room inside the window with a margin.
 void computeView() {
     const float margin = 70.0f;
     float sx = (winW - 2 * margin) / roomW;
     float sy = (winH - 2 * margin) / roomL;
-    scaleF = min(sx, sy);
-    offX = (winW - roomW * scaleF) / 2.0f;
-    offY = (winH - roomL * scaleF) / 2.0f - 15.0f;
+    baseScale = min(sx, sy);
+    baseOffX = (winW - roomW * baseScale) / 2.0f;
+    baseOffY = (winH - roomL * baseScale) / 2.0f - 25.0f;
+    applyView();
 }
 
 // Screen (mouse, origin top-left) -> world (feet, origin bottom-left of room)
 Vec2 toWorld(int mx, int my) {
     float sy = (float)(winH - my);           // flip Y
     return { (mx - offX) / scaleF, (sy - offY) / scaleF };
+}
+
+// Zoom keeping the world point under (mx,my) fixed on screen
+void zoomAt(int mx, int my, float factor) {
+    Vec2 w = toWorld(mx, my);
+    zoom = min(max(zoom * factor, 0.3f), 6.0f);
+    scaleF = baseScale * zoom;
+    offX = mx - w.x * scaleF;
+    offY = (winH - my) - w.y * scaleF;
+    panX = offX - baseOffX;
+    panY = offY - baseOffY;
 }
 
 // ---------------------- M4: geometry helpers -----------------
@@ -80,7 +116,13 @@ void getCorners(const Furniture& f, Vec2 out[4]) {
     for (int i = 0; i < 4; i++) out[i] = rotateAbout(raw[i], c, f.angle);
 }
 
-// ---------------------- M6: validation -----------------------
+// Picking: rotate the point by -theta about the centre, then AABB test.
+bool hitTest(const Furniture& f, Vec2 p) {
+    Vec2 q = rotateAbout(p, {f.x, f.y}, -f.angle);
+    return fabsf(q.x - f.x) <= f.w / 2 && fabsf(q.y - f.y) <= f.h / 2;
+}
+
+// ---------------------- M6/M7: validation --------------------
 bool insideRoom(const Furniture& f) {
     Vec2 c[4];
     getCorners(f, c);
@@ -112,11 +154,92 @@ bool satOverlap(const Furniture& a, const Furniture& b) {
     return true; // no separating axis -> overlap
 }
 
+bool hasDoor() { return roomW >= 6; }
+
+// Door-swing clearance: the quarter-disc (radius DOOR_W) swept by the door leaf.
+// Sample the quarter disc and test whether any sample lies inside the furniture.
+bool doorBlocked(const Furniture& f) {
+    if (!doorClear || !hasDoor()) return false;
+    for (float x = 0; x <= DOOR_W; x += 0.25f)
+        for (float y = 0; y <= DOOR_W; y += 0.25f) {
+            if (x * x + y * y > DOOR_W * DOOR_W) continue;
+            if (hitTest(f, {DOOR_X + x, y})) return true;
+        }
+    return false;
+}
+
 bool isValid(int idx) {
     if (!insideRoom(items[idx])) return false;
+    if (doorBlocked(items[idx])) return false;
     for (int j = 0; j < (int)items.size(); j++)
         if (j != idx && satOverlap(items[idx], items[j])) return false;
     return true;
+}
+
+// ---------------------- M7: undo / redo ----------------------
+void commitUndo(const vector<Furniture>& before) {
+    undoStack.push_back(before);
+    if (undoStack.size() > 100) undoStack.erase(undoStack.begin());
+    redoStack.clear();
+}
+void pushUndo() { commitUndo(items); }
+
+void doUndo() {
+    if (undoStack.empty()) { statusMsg = "Nothing to undo."; return; }
+    redoStack.push_back(items);
+    items = undoStack.back();
+    undoStack.pop_back();
+    sel = -1;
+    statusMsg = "Undo.";
+}
+void doRedo() {
+    if (redoStack.empty()) { statusMsg = "Nothing to redo."; return; }
+    undoStack.push_back(items);
+    items = redoStack.back();
+    redoStack.pop_back();
+    sel = -1;
+    statusMsg = "Redo.";
+}
+
+// ---------------------- M7: save / load ----------------------
+const char* SAVE_FILE = "layout.txt";
+
+void saveLayout() {
+    ofstream out(SAVE_FILE);
+    if (!out) { statusMsg = "Could not write layout.txt!"; return; }
+    out << "SMARTROOM 1\n" << roomW << " " << roomL << "\n" << items.size() << "\n";
+    out << fixed << setprecision(3);
+    for (auto& f : items)
+        out << f.type << " " << f.x << " " << f.y << " " << f.w << " " << f.h << " " << f.angle << "\n";
+    statusMsg = "Layout saved to layout.txt";
+}
+
+void loadLayout() {
+    ifstream in(SAVE_FILE);
+    if (!in) { statusMsg = "No layout.txt found (press S to save first)."; return; }
+    string magic; int ver = 0;
+    float rw, rl; int n;
+    in >> magic >> ver >> rw >> rl >> n;
+    if (!in || magic != "SMARTROOM" || rw < 4 || rw > 60 || rl < 4 || rl > 60 || n < 0 || n > 500) {
+        statusMsg = "layout.txt is invalid or corrupted.";
+        return;
+    }
+    vector<Furniture> loaded;
+    for (int i = 0; i < n; i++) {
+        int t; float x, y, w, h, a;
+        in >> t >> x >> y >> w >> h >> a;
+        if (!in || t < 0 || t >= FTYPE_COUNT) { statusMsg = "layout.txt is invalid or corrupted."; return; }
+        Furniture f = makeItem(t);
+        f.x = x; f.y = y; f.w = w; f.h = h; f.angle = a;
+        loaded.push_back(f);
+    }
+    roomW = rw; roomL = rl;
+    items = loaded;
+    sel = -1;
+    undoStack.clear(); redoStack.clear();
+    zoom = 1; panX = panY = 0;
+    computeView();
+    statusMsg = "Layout loaded (" + to_string(n) + " items).";
 }
 
 // ---------------------- M3: drawing primitives ---------------
@@ -238,23 +361,34 @@ void drawRoom() {
     glVertex2f(0, 0); glVertex2f(roomW, 0); glVertex2f(roomW, roomL); glVertex2f(0, roomL);
     glEnd();
 
-    // door on the bottom wall (3 ft wide) with swing arc
-    if (roomW >= 6) {
-        float dx0 = 1.5f, dx1 = 4.5f;
+    if (hasDoor()) {
+        float dx0 = DOOR_X, dx1 = DOOR_X + DOOR_W;
+
+        // door-swing clearance zone (translucent quarter disc)
+        if (doorClear) {
+            glColor4f(0.2f, 0.45f, 1.0f, 0.18f);
+            glBegin(GL_TRIANGLE_FAN);
+            glVertex2f(dx0, 0);
+            for (int i = 0; i <= 24; i++) {
+                float t = (PI / 2) * i / 24;
+                glVertex2f(dx0 + DOOR_W * cosf(t), DOOR_W * sinf(t));
+            }
+            glEnd();
+        }
+
         glColor3f(0.93f, 0.90f, 0.82f); glLineWidth(10);           // opening in the wall
         glBegin(GL_LINES); glVertex2f(dx0, 0); glVertex2f(dx1, 0); glEnd();
         glColor3f(0.35f, 0.2f, 0.1f); glLineWidth(3);
-        glBegin(GL_LINES); glVertex2f(dx0, 0); glVertex2f(dx0, 3.0f); glEnd(); // door leaf
+        glBegin(GL_LINES); glVertex2f(dx0, 0); glVertex2f(dx0, DOOR_W); glEnd(); // door leaf
         glColor3f(0.35f, 0.2f, 0.1f); glLineWidth(1);
-        glBegin(GL_LINE_STRIP);                                                // swing arc
+        glBegin(GL_LINE_STRIP);                                                  // swing arc
         for (int i = 0; i <= 24; i++) {
             float t = (PI / 2) * i / 24;
-            glVertex2f(dx0 + 3.0f * cosf(t), 3.0f * sinf(t));
+            glVertex2f(dx0 + DOOR_W * cosf(t), DOOR_W * sinf(t));
         }
         glEnd();
-    }
-    // window on the top wall (4 ft wide)
-    if (roomW >= 6) {
+
+        // window on the top wall (4 ft wide)
         float wx0 = roomW / 2 - 2.0f, wx1 = roomW / 2 + 2.0f;
         glColor3f(0.65f, 0.85f, 0.95f); glLineWidth(8);
         glBegin(GL_LINES); glVertex2f(wx0, roomL); glVertex2f(wx1, roomL); glEnd();
@@ -280,14 +414,16 @@ void drawHUD() {
     float freePct = 100.0f * (1.0f - used / (roomW * roomL));
 
     glColor3f(0, 0, 0);
-    char buf[200];
+    char buf[240];
     snprintf(buf, sizeof buf,
-             "SmartRoom | Room: %.1f x %.1f ft | Items: %d | Free floor: %.1f%% | Snap: %s",
-             roomW, roomL, (int)items.size(), freePct, snapOn ? "ON" : "OFF");
+             "SmartRoom | Room: %.1f x %.1f ft | Items: %d | Free floor: %.1f%% | Zoom: %d%% | Snap: %s | Door zone: %s",
+             roomW, roomL, (int)items.size(), freePct, (int)(zoom * 100),
+             snapOn ? "ON" : "OFF", doorClear ? "ON" : "OFF");
     drawText(15, winH - 22, buf);
     drawText(15, winH - 40,
-             "[1]Bed [2]Sofa [3]Table [4]Chair [5]Wardrobe [6]Desk | R rotate 90 | E rotate 15 | "
-             "+/- scale | X/Del delete | G snap | C clear | Esc quit");
+             "ADD: [1]Bed [2]Sofa [3]Table [4]Chair [5]Wardrobe [6]Desk | EDIT: drag move, R rotate 90, E rotate 15, +/- scale, X/Del delete, C clear");
+    drawText(15, winH - 58,
+             "UNDO/REDO: U / Y (or Ctrl+Z/Y) | FILE: S save, L load | VIEW: wheel or Z/O zoom, right-drag or arrows pan, 0 reset | G snap, D door zone, Esc quit");
     glColor3f(0.0f, 0.3f, 0.7f);
     drawText(15, 15, statusMsg);
 }
@@ -299,7 +435,7 @@ void display() {
     glLoadIdentity();
 
     glPushMatrix();
-    glTranslatef(offX, offY, 0);          // world (feet) -> screen (pixels)
+    glTranslatef(offX, offY, 0);          // world (feet) -> screen (pixels), with zoom/pan
     glScalef(scaleF, scaleF, 1);
     drawRoom();
     for (int i = 0; i < (int)items.size(); i++) drawFurniture(i);
@@ -335,10 +471,16 @@ Furniture makeItem(int type) {
 
 // Try the room centre first, then scan the room for the first free valid spot.
 void addItem(int type) {
+    vector<Furniture> before = items;
     Furniture f = makeItem(type);
     f.x = roomW / 2; f.y = roomL / 2;
     items.push_back(f);
-    if (isValid((int)items.size() - 1)) { sel = (int)items.size() - 1; statusMsg = string(FNAMES[type]) + " added."; return; }
+    if (isValid((int)items.size() - 1)) {
+        sel = (int)items.size() - 1;
+        commitUndo(before);
+        statusMsg = string(FNAMES[type]) + " added.";
+        return;
+    }
     items.pop_back();
 
     for (float y = f.h / 2; y <= roomL - f.h / 2 + 0.001f; y += 0.5f)
@@ -347,6 +489,7 @@ void addItem(int type) {
             items.push_back(f);
             if (isValid((int)items.size() - 1)) {
                 sel = (int)items.size() - 1;
+                commitUndo(before);
                 statusMsg = string(FNAMES[type]) + " added.";
                 return;
             }
@@ -355,20 +498,21 @@ void addItem(int type) {
     statusMsg = "No free space for " + string(FNAMES[type]) + "!";
 }
 
-// Picking: rotate the mouse point by -theta about the centre, then AABB test.
-bool hitTest(const Furniture& f, Vec2 p) {
-    Vec2 q = rotateAbout(p, {f.x, f.y}, -f.angle);
-    return fabsf(q.x - f.x) <= f.w / 2 && fabsf(q.y - f.y) <= f.h / 2;
-}
-
 float snapVal(float v) { return roundf(v / gridSize) * gridSize; }
 
 void mouse(int button, int state, int mx, int my) {
+    // right / middle button = pan the view
+    if (button == GLUT_RIGHT_BUTTON || button == GLUT_MIDDLE_BUTTON) {
+        panning = (state == GLUT_DOWN);
+        lastMX = mx; lastMY = my;
+        return;
+    }
     if (button != GLUT_LEFT_BUTTON) return;
     Vec2 p = toWorld(mx, my);
 
     if (state == GLUT_DOWN) {
         sel = -1;
+        dragMoved = false;
         for (int i = (int)items.size() - 1; i >= 0; i--) {   // topmost first
             if (hitTest(items[i], p)) {
                 sel = i;
@@ -388,16 +532,27 @@ void mouse(int button, int state, int mx, int my) {
         }
     } else if (dragging) {
         dragging = false;
-        if (sel >= 0 && !isValid(sel)) {                      // invalid drop -> revert
+        if (dragMoved && sel >= 0 && !isValid(sel)) {         // invalid drop -> revert
             items[sel].x = backX; items[sel].y = backY;
+            if (!undoStack.empty()) undoStack.pop_back();     // drop the useless undo entry
             statusMsg = "Invalid position - item moved back.";
         }
+        dragMoved = false;
     }
     glutPostRedisplay();
 }
 
 void motion(int mx, int my) {
+    if (panning) {
+        panX += (float)(mx - lastMX);
+        panY -= (float)(my - lastMY);
+        lastMX = mx; lastMY = my;
+        applyView();
+        glutPostRedisplay();
+        return;
+    }
     if (!dragging || sel < 0) return;
+    if (!dragMoved) { pushUndo(); dragMoved = true; }          // snapshot before the first move
     Vec2 p = toWorld(mx, my);
     float nx = p.x + dragDX, ny = p.y + dragDY;
     if (snapOn) { nx = snapVal(nx); ny = snapVal(ny); }
@@ -406,25 +561,52 @@ void motion(int mx, int my) {
     glutPostRedisplay();
 }
 
+void wheel(int, int dir, int mx, int my) {
+    zoomAt(mx, my, dir > 0 ? 1.1f : 1.0f / 1.1f);
+    glutPostRedisplay();
+}
+
+void special(int key, int, int) {
+    const float step = 30.0f;
+    if      (key == GLUT_KEY_LEFT)  panX -= step;
+    else if (key == GLUT_KEY_RIGHT) panX += step;
+    else if (key == GLUT_KEY_UP)    panY += step;
+    else if (key == GLUT_KEY_DOWN)  panY -= step;
+    applyView();
+    glutPostRedisplay();
+}
+
 void keyboard(unsigned char key, int, int) {
     if (key >= '1' && key <= '6') addItem(key - '1');
     else if (key == 27) exit(0);
     else if (key == 'g' || key == 'G') { snapOn = !snapOn; statusMsg = snapOn ? "Snap ON" : "Snap OFF"; }
-    else if (key == 'c' || key == 'C') { items.clear(); sel = -1; statusMsg = "Room cleared."; }
+    else if (key == 'd' || key == 'D') { doorClear = !doorClear; statusMsg = doorClear ? "Door clearance zone ON" : "Door clearance zone OFF"; }
+    else if (key == 'u' || key == 'U' || key == 26) doUndo();      // 26 = Ctrl+Z
+    else if (key == 'y' || key == 'Y' || key == 25) doRedo();      // 25 = Ctrl+Y
+    else if (key == 's' || key == 'S') saveLayout();
+    else if (key == 'l' || key == 'L') loadLayout();
+    else if (key == 'z' || key == 'Z') zoomAt(winW / 2, winH / 2, 1.15f);
+    else if (key == 'o' || key == 'O') zoomAt(winW / 2, winH / 2, 1.0f / 1.15f);
+    else if (key == '0') { zoom = 1; panX = panY = 0; applyView(); statusMsg = "View reset."; }
+    else if (key == 'c' || key == 'C') {
+        if (!items.empty()) { pushUndo(); items.clear(); sel = -1; statusMsg = "Room cleared (U to undo)."; }
+    }
     else if (sel >= 0) {
         Furniture& f = items[sel];
-        if (key == 'r' || key == 'R') f.angle = fmodf(f.angle + 90.0f, 360.0f);
-        else if (key == 'e' || key == 'E') f.angle = fmodf(f.angle + 15.0f, 360.0f);
-        else if (key == '+' || key == '=') {                   // scale up
-            f.w = min(f.w * 1.1f, 12.0f); f.h = min(f.h * 1.1f, 12.0f);
-        } else if (key == '-') {                                // scale down
-            f.w = max(f.w * 0.9f, 1.0f);  f.h = max(f.h * 0.9f, 1.0f);
-        } else if (key == 'x' || key == 'X' || key == 127 || key == 8) {
+        bool changed = true;
+        if (key == 'r' || key == 'R')      { pushUndo(); f.angle = fmodf(f.angle + 90.0f, 360.0f); }
+        else if (key == 'e' || key == 'E') { pushUndo(); f.angle = fmodf(f.angle + 15.0f, 360.0f); }
+        else if (key == '+' || key == '=') { pushUndo(); f.w = min(f.w * 1.1f, 12.0f); f.h = min(f.h * 1.1f, 12.0f); }
+        else if (key == '-')               { pushUndo(); f.w = max(f.w * 0.9f, 1.0f);  f.h = max(f.h * 0.9f, 1.0f); }
+        else if (key == 'x' || key == 'X' || key == 127 || key == 8) {
+            pushUndo();
             items.erase(items.begin() + sel);
             sel = -1;
             statusMsg = "Item deleted.";
-        }
-        if (sel >= 0 && !isValid(sel)) statusMsg = "Warning: item overlaps or leaves the room (shown in red).";
+            changed = false;
+        } else changed = false;
+        if (changed && sel >= 0 && !isValid(sel))
+            statusMsg = "Warning: item overlaps, leaves the room or blocks the door (shown in red).";
     }
     glutPostRedisplay();
 }
@@ -451,7 +633,9 @@ int main(int argc, char** argv) {
     glutReshapeFunc(reshape);
     glutMouseFunc(mouse);
     glutMotionFunc(motion);
+    glutMouseWheelFunc(wheel);
     glutKeyboardFunc(keyboard);
+    glutSpecialFunc(special);
     glutMainLoop();
     return 0;
 }
