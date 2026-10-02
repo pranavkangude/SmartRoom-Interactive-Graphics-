@@ -39,3 +39,9 @@ void drawText(float x, float y, const std::string& s) {
     glRasterPos2f(x, y);
     for (char c : s) glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, c);
 }
+
+void drawTextWorld(float wx, float wy, const std::string& s, int align) {
+    float widthPx = (float)glutBitmapLength(GLUT_BITMAP_HELVETICA_12, (const unsigned char*)s.c_str());
+    float shift = (align == 1) ? widthPx / 2 : (align == 2 ? widthPx : 0);
+    drawText(wx - shift / scaleF, wy, s);
+}

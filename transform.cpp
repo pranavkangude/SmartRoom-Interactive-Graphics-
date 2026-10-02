@@ -34,10 +34,11 @@ void applyView() {
 // Window-to-viewport mapping: fit the room inside the window with a margin.
 void computeView() {
     const float margin = 70.0f;
-    float sx = (winW - 2 * margin) / roomW;
+    float availW = winW - PALETTE_W;         // area right of the palette
+    float sx = (availW - 2 * margin) / roomW;
     float sy = (winH - 2 * margin) / roomL;
-    baseScale = min(sx, sy);
-    baseOffX = (winW - roomW * baseScale) / 2.0f;
+    baseScale = max(min(sx, sy), 1.0f);
+    baseOffX = PALETTE_W + (availW - roomW * baseScale) / 2.0f;
     baseOffY = (winH - roomL * baseScale) / 2.0f - 25.0f;
     applyView();
 }

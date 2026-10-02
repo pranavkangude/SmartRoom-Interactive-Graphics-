@@ -7,6 +7,8 @@ SmartRoom lets you define a room to scale, place furniture in it, and rearrange 
 
 - Room drawn to scale from user-entered width and length (in feet), with grid, walls, a door with swing arc, and a window
 - Six furniture types drawn from OpenGL primitives: bed, sofa, round table, chair, wardrobe, desk
+- Clickable furniture palette (with Undo / Redo / Save / Load / Clear buttons) and hover highlighting
+- Wall dimension lines with length labels, and a live info line for the selected item (size, angle, position)
 - Add, select, move, rotate, scale and delete furniture
 - Snap-to-grid
 - Boundary and collision detection (Separating Axis Theorem for rotated items); invalid items turn red and snap back if dropped in an invalid place
@@ -20,7 +22,7 @@ SmartRoom lets you define a room to scale, place furniture in it, and rearrange 
 
 | Action | Input |
 |---|---|
-| Add furniture (bed, sofa, table, chair, wardrobe, desk) | `1` `2` `3` `4` `5` `6` |
+| Add furniture (bed, sofa, table, chair, wardrobe, desk) | Click the palette, or keys `1` `2` `3` `4` `5` `6` |
 | Select / move | Left-click, drag |
 | Rotate 90° / 15° | `R` / `E` |
 | Scale selected item | `+` / `-` |
@@ -33,6 +35,7 @@ SmartRoom lets you define a room to scale, place furniture in it, and rearrange 
 | Reset view | `0` |
 | Toggle snap-to-grid | `G` |
 | Toggle door clearance zone | `D` |
+| Toggle dimension labels | `M` |
 | Quit | `Esc` |
 
 ## Build and run
@@ -70,13 +73,13 @@ The program asks for the room width and length in feet (for example `12` and `10
 | `common.h`, `state.cpp` | Shared data | `Furniture` and `Vec2` types, global state |
 | `transform.h/.cpp` | Transformation | Rotation about a centre, corners, picking, window-to-viewport mapping, zoom and pan |
 | `collision.h/.cpp` | Collision | Boundary check, SAT overlap, door-swing clearance, `isValid` |
-| `room.h/.cpp` | Room | Floor, grid, walls, door and window |
+| `room.h/.cpp` | Room | Floor, grid, walls, door, window and dimension lines |
 | `furniture.h/.cpp` | Furniture | Furniture sizes, colours and drawing |
 | `interaction.h/.cpp` | Interaction | Mouse, wheel and keyboard callbacks, adding items |
 | `history.h/.cpp` | Undo / redo | Snapshot stacks |
 | `fileio.h/.cpp` | File | Save and load `layout.txt` |
-| `ui.h/.cpp` | UI | On-screen status and help text |
-| `gfx.h/.cpp` | Drawing helpers | Rectangles, ellipses, text |
+| `ui.h/.cpp` | UI | Furniture palette (buttons, hover, hit testing), status and help text |
+| `gfx.h/.cpp` | Drawing helpers | Rectangles, ellipses, screen and world-anchored text |
 
 ## Computer graphics concepts demonstrated
 
@@ -98,7 +101,7 @@ The program asks for the room width and length in feet (for example `12` and `10
 - [x] M4-M6: transformations, mouse and keyboard interaction, snap-to-grid, boundary and collision checks
 - [x] M7: undo/redo, save/load, zoom and pan, door clearance zone
 - [x] Code split into modules (see Code structure)
-- [ ] Furniture palette and wall dimension labels
+- [x] Furniture palette and wall dimension labels
 - [ ] Report, screenshots and demo video
 
 ## Limitations and future work

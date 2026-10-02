@@ -32,6 +32,10 @@ extern int   lastMX, lastMY;
 extern float gridSize;                   // snap step in feet
 extern bool  snapOn;
 extern bool  doorClear;                  // door-swing clearance zone on/off
+extern bool  showDims;                   // wall dimension labels on/off
+extern int   hoverBtn;                   // palette button under the mouse (-1 = none)
+
+const float PALETTE_W = 130.0f;          // width (pixels) of the left furniture palette
 
 // door (bottom wall): hinge at DOOR_X, opening width DOOR_W, swings into the room
 const float DOOR_X = 1.5f, DOOR_W = 3.0f;

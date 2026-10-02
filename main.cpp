@@ -30,9 +30,11 @@ void display() {
     glTranslatef(offX, offY, 0);          // world (feet) -> screen (pixels), with zoom/pan
     glScalef(scaleF, scaleF, 1);
     drawRoom();
+    if (showDims) drawDimensions();
     for (int i = 0; i < (int)items.size(); i++) drawFurniture(i);
     glPopMatrix();
 
+    drawPalette();
     drawHUD();
     glutSwapBuffers();                    // double buffering
 }
@@ -68,6 +70,7 @@ int main(int argc, char** argv) {
     glutReshapeFunc(reshape);
     glutMouseFunc(mouse);
     glutMotionFunc(motion);
+    glutPassiveMotionFunc(passiveMotion);
     glutMouseWheelFunc(wheel);
     glutKeyboardFunc(keyboard);
     glutSpecialFunc(special);

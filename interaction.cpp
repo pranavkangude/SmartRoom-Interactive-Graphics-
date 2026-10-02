@@ -6,6 +6,7 @@
 #include "furniture.h"
 #include "history.h"
 #include "fileio.h"
+#include "ui.h"
 #include <GL/freeglut.h>
 #include <cmath>
 #include <cstdlib>
@@ -43,6 +44,29 @@ static void addItem(int type) {
 
 static float snapVal(float v) { return roundf(v / gridSize) * gridSize; }
 
+static void clearRoom() {
+    if (items.empty()) return;
+    pushUndo();
+    items.clear();
+    sel = -1;
+    statusMsg = "Room cleared (U to undo).";
+}
+
+// A click on one of the palette buttons
+static void paletteAction(int b) {
+    if (b < FTYPE_COUNT) addItem(b);
+    else if (b == BTN_UNDO) doUndo();
+    else if (b == BTN_REDO) doRedo();
+    else if (b == BTN_SAVE) saveLayout();
+    else if (b == BTN_LOAD) loadLayout();
+    else if (b == BTN_CLEAR) clearRoom();
+}
+
+void passiveMotion(int mx, int my) {
+    int h = paletteHit(mx, my);
+    if (h != hoverBtn) { hoverBtn = h; glutPostRedisplay(); }
+}
+
 void mouse(int button, int state, int mx, int my) {
     // right / middle button = pan the view
     if (button == GLUT_RIGHT_BUTTON || button == GLUT_MIDDLE_BUTTON) {
@@ -51,6 +75,14 @@ void mouse(int button, int state, int mx, int my) {
         return;
     }
     if (button != GLUT_LEFT_BUTTON) return;
+
+    // clicks on the left palette never touch the room
+    if (state == GLUT_DOWN && mx < PALETTE_W) {
+        int b = paletteHit(mx, my);
+        if (b >= 0) paletteAction(b);
+        glutPostRedisplay();
+        return;
+    }
     Vec2 p = toWorld(mx, my);
 
     if (state == GLUT_DOWN) {
@@ -131,9 +163,8 @@ void keyboard(unsigned char key, int, int) {
     else if (key == 'z' || key == 'Z') zoomAt(winW / 2, winH / 2, 1.15f);
     else if (key == 'o' || key == 'O') zoomAt(winW / 2, winH / 2, 1.0f / 1.15f);
     else if (key == '0') { zoom = 1; panX = panY = 0; applyView(); statusMsg = "View reset."; }
-    else if (key == 'c' || key == 'C') {
-        if (!items.empty()) { pushUndo(); items.clear(); sel = -1; statusMsg = "Room cleared (U to undo)."; }
-    }
+    else if (key == 'c' || key == 'C') clearRoom();
+    else if (key == 'm' || key == 'M') { showDims = !showDims; statusMsg = showDims ? "Dimensions ON" : "Dimensions OFF"; }
     else if (sel >= 0) {
         Furniture& f = items[sel];
         bool changed = true;

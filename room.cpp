@@ -5,6 +5,7 @@
 #include "gfx.h"
 #include <GL/freeglut.h>
 #include <cmath>
+#include <cstdio>
 
 void drawRoom() {
     // floor
@@ -65,4 +66,29 @@ void drawRoom() {
         glVertex2f(wx0, roomL - 0.06f); glVertex2f(wx1, roomL - 0.06f);
         glEnd();
     }
+}
+
+// Dimension lines drawn a fixed number of pixels outside the walls.
+void drawDimensions() {
+    float d = 22.0f / scaleF;          // distance of the dimension line from the wall
+    float t = 5.0f / scaleF;           // half length of end ticks
+    glColor3f(0.25f, 0.25f, 0.30f);
+    glLineWidth(1.5f);
+    glBegin(GL_LINES);
+    // width (below the room)
+    glVertex2f(0, -d);      glVertex2f(roomW, -d);
+    glVertex2f(0, -d - t);  glVertex2f(0, -d + t);
+    glVertex2f(roomW, -d - t); glVertex2f(roomW, -d + t);
+    // length (left of the room)
+    glVertex2f(-d, 0);      glVertex2f(-d, roomL);
+    glVertex2f(-d - t, 0);  glVertex2f(-d + t, 0);
+    glVertex2f(-d - t, roomL); glVertex2f(-d + t, roomL);
+    glEnd();
+
+    char buf[40];
+    snprintf(buf, sizeof buf, "%.1f ft", roomW);
+    drawTextWorld(roomW / 2, -d - 16.0f / scaleF, buf, 1);
+    snprintf(buf, sizeof buf, "%.1f ft", roomL);
+    drawTextWorld(-d - 8.0f / scaleF, roomL / 2 - 4.0f / scaleF, buf, 2);
+
 }

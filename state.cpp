@@ -13,6 +13,8 @@ int   lastMX = 0, lastMY = 0;
 float gridSize = 0.5f;
 bool  snapOn = true;
 bool  doorClear = true;
+bool  showDims = true;
+int   hoverBtn = -1;
 
 std::vector<Furniture> items;
 int   sel = -1;
