@@ -8,6 +8,7 @@ SmartRoom lets you define a room to scale, place furniture in it, and rearrange 
 - Room drawn to scale from user-entered width and length (in feet), with grid, walls, a door with swing arc, and a window
 - Six furniture types drawn from OpenGL primitives: bed, sofa, round table, chair, wardrobe, desk
 - Clickable furniture palette (with Undo / Redo / Save / Load / Clear buttons) and hover highlighting
+- **Own graphics pipeline:** 3x3 homogeneous matrices for all transformations, Liang-Barsky line clipping, Sutherland-Hodgman polygon clipping, DDA and Bresenham line drawing, and scanline polygon fill (OpenGL is used only to plot pixels)
 - Wall dimension lines with length labels, and a live info line for the selected item (size, angle, position)
 - Add, select, move, rotate, scale and delete furniture
 - Snap-to-grid
@@ -36,6 +37,9 @@ SmartRoom lets you define a room to scale, place furniture in it, and rearrange 
 | Toggle snap-to-grid | `G` |
 | Toggle door clearance zone | `D` |
 | Toggle dimension labels | `M` |
+| Line algorithm: OpenGL / DDA / Bresenham | `B` |
+| Polygon fill: own scanline / OpenGL | `F` |
+| Clip scene to viewport on / off | `K` |
 | Quit | `Esc` |
 
 ## Build and run
@@ -47,8 +51,8 @@ SmartRoom lets you define a room to scale, place furniture in it, and rearrange 
 3. Compile (PowerShell; the quotes are needed because the folder name contains dots):
 
 ```
-g++ main.cpp state.cpp transform.cpp collision.cpp gfx.cpp furniture.cpp room.cpp history.cpp fileio.cpp ui.cpp interaction.cpp -o smartroom.exe "-Ifreeglut-mingw-3.8.0/freeglut/include" "-Lfreeglut-mingw-3.8.0/freeglut/lib" -lfreeglut -lopengl32 -lglu32
-.\smartroom.exe
+g++ main.cpp state.cpp matrix.cpp clip.cpp raster.cpp gfx.cpp transform.cpp collision.cpp furniture.cpp room.cpp history.cpp fileio.cpp ui.cpp interaction.cpp -o smartroom_v4.exe "-Ifreeglut-mingw-3.8.0/freeglut/include" "-Lfreeglut-mingw-3.8.0/freeglut/lib" -lfreeglut -lopengl32 -lglu32
+.\smartroom_v4.exe
 ```
 
 Or simply run `.\build.bat`.
@@ -59,7 +63,7 @@ For a 64-bit compiler, use `freeglut/lib/x64` and the DLL from `bin/x64`.
 
 ```
 sudo apt install build-essential freeglut3-dev
-g++ main.cpp state.cpp transform.cpp collision.cpp gfx.cpp furniture.cpp room.cpp history.cpp fileio.cpp ui.cpp interaction.cpp -o smartroom -lGL -lGLU -lglut
+g++ main.cpp state.cpp matrix.cpp clip.cpp raster.cpp gfx.cpp transform.cpp collision.cpp furniture.cpp room.cpp history.cpp fileio.cpp ui.cpp interaction.cpp -o smartroom -lGL -lGLU -lglut
 ./smartroom
 ```
 
@@ -71,7 +75,10 @@ The program asks for the room width and length in feet (for example `12` and `10
 |---|---|---|
 | `main.cpp` | Application | Window setup, display and reshape callbacks, main loop |
 | `common.h`, `state.cpp` | Shared data | `Furniture` and `Vec2` types, global state |
-| `transform.h/.cpp` | Transformation | Rotation about a centre, corners, picking, window-to-viewport mapping, zoom and pan |
+| `matrix.h/.cpp` | Transformation | 3x3 homogeneous matrices: translate, rotate, scale, multiply, inverse |
+| `transform.h/.cpp` | Transformation | Model and view matrices, rotation about a centre, corners, picking, window-to-viewport mapping, zoom and pan |
+| `clip.h/.cpp` | Clipping | Liang-Barsky line clipping, Sutherland-Hodgman polygon clipping |
+| `raster.h/.cpp` | Rasterization | DDA, Bresenham, scanline polygon fill (compute pixels only) |
 | `collision.h/.cpp` | Collision | Boundary check, SAT overlap, door-swing clearance, `isValid` |
 | `room.h/.cpp` | Room | Floor, grid, walls, door, window and dimension lines |
 | `furniture.h/.cpp` | Furniture | Furniture sizes, colours and drawing |
@@ -79,19 +86,20 @@ The program asks for the room width and length in feet (for example `12` and `10
 | `history.h/.cpp` | Undo / redo | Snapshot stacks |
 | `fileio.h/.cpp` | File | Save and load `layout.txt` |
 | `ui.h/.cpp` | UI | Furniture palette (buttons, hover, hit testing), status and help text |
-| `gfx.h/.cpp` | Drawing helpers | Rectangles, ellipses, screen and world-anchored text |
+| `gfx.h/.cpp` | Drawing pipeline | Local coordinates -> own matrix -> clip -> rasterize; rectangles, ellipses, text |
 
 ## Computer graphics concepts demonstrated
 
 | Concept | Where it is used |
 |---|---|
-| Line drawing | Walls, grid, door leaf and swing arc |
-| Polygon and ellipse filling | Furniture shapes, floor, round table |
-| 2D translation, rotation, scaling | Moving, rotating and resizing furniture |
-| Rotation about the object's centre | `rotateAbout()`, `glTranslatef` + `glRotatef` |
+| Line drawing (DDA, Bresenham) | Grid, walls, door leaf and swing arc, outlines (`raster.cpp`) |
+| Scanline polygon filling | Furniture shapes, floor, round table, door zone (`raster.cpp`) |
+| 2D translation, rotation, scaling with 3x3 homogeneous matrices | Moving, rotating and resizing furniture; composite transform `T * R * T^-1` (`matrix.cpp`, `transform.cpp`) |
+| Rotation about the object's centre | `rotateAbout()` = translate, rotate, translate back |
+| Clipping | Liang-Barsky for lines, Sutherland-Hodgman for polygons, against the canvas viewport (`clip.cpp`) |
 | Window-to-viewport mapping | World (feet) to screen (pixels), zoom and pan |
 | Collision detection (SAT) | Preventing overlap between rotated furniture |
-| Picking | Rotating the mouse point by -theta and testing against the axis-aligned rectangle |
+| Picking | Inverse model matrix maps the mouse point into the furniture's local space, then an axis-aligned rectangle test |
 | Event handling | Mouse, wheel, keyboard and special-key callbacks |
 | Double buffering | Smooth redraw with `glutSwapBuffers` |
 
@@ -102,7 +110,19 @@ The program asks for the room width and length in feet (for example `12` and `10
 - [x] M7: undo/redo, save/load, zoom and pan, door clearance zone
 - [x] Code split into modules (see Code structure)
 - [x] Furniture palette and wall dimension labels
+- [x] Own matrices, clipping and rasterization algorithms (stage 1 of the upgrades)
+- [ ] 3D preview with lighting
+- [ ] Rule-based auto-arrange
 - [ ] Report, screenshots and demo video
+
+## Algorithm unit tests
+
+The matrix, clipping and rasterization code does not depend on OpenGL, so it has its own tests:
+
+```
+g++ tests/test_algorithms.cpp matrix.cpp clip.cpp raster.cpp -I. -o test_algorithms_v1.exe
+.\test_algorithms_v1.exe
+```
 
 ## Limitations and future work
 

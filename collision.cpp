@@ -42,10 +42,13 @@ bool hasDoor() { return roomW >= 6; }
 // Sample the quarter disc and test whether any sample lies inside the furniture.
 bool doorBlocked(const Furniture& f) {
     if (!doorClear || !hasDoor()) return false;
+    Mat3 inv = matInverse(modelMatrix(f));          // world -> furniture local space
+    float hw = f.w / 2, hh = f.h / 2;
     for (float x = 0; x <= DOOR_W; x += 0.25f)
         for (float y = 0; y <= DOOR_W; y += 0.25f) {
             if (x * x + y * y > DOOR_W * DOOR_W) continue;
-            if (hitTest(f, {DOOR_X + x, y})) return true;
+            Vec2 q = matApply(inv, {DOOR_X + x, y});
+            if (fabsf(q.x) <= hw && fabsf(q.y) <= hh) return true;
         }
     return false;
 }

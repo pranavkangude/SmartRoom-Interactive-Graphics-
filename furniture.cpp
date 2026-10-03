@@ -2,6 +2,7 @@
 #include "furniture.h"
 #include "collision.h"
 #include "gfx.h"
+#include "transform.h"
 #include <GL/freeglut.h>
 
 const char* FNAMES[FTYPE_COUNT] = {"Bed", "Sofa", "Table", "Chair", "Wardrobe", "Desk"};
@@ -49,10 +50,10 @@ static void drawShape(const Furniture& f, bool valid) {
         break;
     case WARDROBE:
         fillRect(-hw, -hh, hw, hh, r, g, b);
-        glColor3f(dr, dg, db); glLineWidth(2);
-        glBegin(GL_LINES); glVertex2f(0, -hh); glVertex2f(0, hh); glEnd();  // door split
-        glColor3f(0.1f, 0.1f, 0.1f); glPointSize(5);
-        glBegin(GL_POINTS); glVertex2f(-0.2f, 0); glVertex2f(0.2f, 0); glEnd(); // handles
+        glColor3f(dr, dg, db);
+        gfxLine(0, -hh, 0, hh, 2);                                          // door split
+        fillRect(-0.30f, -0.07f, -0.15f, 0.07f, 0.1f, 0.1f, 0.1f);          // handles
+        fillRect(0.15f, -0.07f, 0.30f, 0.07f, 0.1f, 0.1f, 0.1f);
         break;
     case DESK:
         fillRect(-hw, -hh, hw, hh, r, g, b);
@@ -67,10 +68,9 @@ void drawFurniture(int idx) {
     bool valid = isValid(idx);
     bool selected = (idx == sel);
 
-    glPushMatrix();
-    glTranslatef(f.x, f.y, 0);          // 3) move to position
-    glRotatef(f.angle, 0, 0, 1);        // 2) rotate about own centre
-    drawShape(f, valid);                // 1) shape defined around (0,0)
+    // CTM = View * Model : furniture local space -> world -> screen (our own matrices)
+    gfxSetCTM(matMul(viewMatrix(), modelMatrix(f)));
+    drawShape(f, valid);                // shape is defined around (0,0)
 
     // outline: blue when selected, dark red when invalid, black otherwise
     if (selected)      glColor3f(0.0f, 0.35f, 1.0f);
@@ -79,5 +79,5 @@ void drawFurniture(int idx) {
     float lw = selected ? 3.5f : 1.5f;
     if (f.type == TABLE) strokeEllipse(0, 0, f.w / 2, f.h / 2, lw);
     else                 strokeRect(-f.w / 2, -f.h / 2, f.w / 2, f.h / 2, lw);
-    glPopMatrix();
+    gfxSetCTM(viewMatrix());            // back to plain world -> screen
 }

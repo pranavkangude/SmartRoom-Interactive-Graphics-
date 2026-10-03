@@ -14,6 +14,9 @@ float gridSize = 0.5f;
 bool  snapOn = true;
 bool  doorClear = true;
 bool  showDims = true;
+int   lineAlgo = ALGO_BRESENHAM;
+bool  fillScanline = true;
+bool  clipOn = true;
 int   hoverBtn = -1;
 
 std::vector<Furniture> items;

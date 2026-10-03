@@ -12,7 +12,7 @@ static const float BTN_X = 10.0f, BTN_W = PALETTE_W - 20.0f, BTN_H = 36.0f, BTN_
 static const char* ACTION_LABELS[BTN_COUNT - BTN_UNDO] = {"Undo", "Redo", "Save", "Load", "Clear"};
 
 static float btnTop(int i) {
-    float y = winH - 90.0f - i * (BTN_H + BTN_GAP);
+    float y = winH - 112.0f - i * (BTN_H + BTN_GAP);
     if (i >= BTN_UNDO) y -= 14.0f;               // extra gap between furniture and actions
     return y;
 }
@@ -35,7 +35,7 @@ void drawPalette() {
     glBegin(GL_LINES); glVertex2f(PALETTE_W, 0); glVertex2f(PALETTE_W, (float)winH); glEnd();
 
     glColor3f(0.25f, 0.25f, 0.35f);
-    drawText(BTN_X, winH - 80.0f, "FURNITURE");
+    drawText(BTN_X, winH - 102.0f, "FURNITURE");
 
     for (int i = 0; i < BTN_COUNT; i++) {
         float y1 = btnTop(i), y0 = y1 - BTN_H;
@@ -77,6 +77,11 @@ void drawHUD() {
              "ADD: click the palette or keys 1-6 | EDIT: drag move, R rotate 90, E rotate 15, +/- scale, X/Del delete, C clear");
     drawText(15, winH - 58,
              "U/Y undo/redo | S/L save/load | wheel or Z/O zoom, right-drag or arrows pan, 0 reset | G snap, D door zone, M dimensions, Esc quit");
+    static const char* ALGO_NAMES[ALGO_COUNT] = {"OpenGL lines", "DDA", "Bresenham"};
+    snprintf(buf, sizeof buf, "RENDER:  Line algorithm [B]: %s  |  Polygon fill [F]: %s  |  Clip to viewport [K]: %s",
+             ALGO_NAMES[lineAlgo], fillScanline ? "own scanline" : "OpenGL", clipOn ? "ON" : "OFF");
+    glColor3f(0.35f, 0.1f, 0.5f);
+    drawText(15, winH - 76, buf);
 
     // selected item info
     if (sel >= 0 && sel < (int)items.size()) {

@@ -164,6 +164,13 @@ void keyboard(unsigned char key, int, int) {
     else if (key == 'o' || key == 'O') zoomAt(winW / 2, winH / 2, 1.0f / 1.15f);
     else if (key == '0') { zoom = 1; panX = panY = 0; applyView(); statusMsg = "View reset."; }
     else if (key == 'c' || key == 'C') clearRoom();
+    else if (key == 'b' || key == 'B') {
+        lineAlgo = (lineAlgo + 1) % ALGO_COUNT;
+        static const char* names[ALGO_COUNT] = {"OpenGL", "DDA", "Bresenham"};
+        statusMsg = string("Line algorithm: ") + names[lineAlgo];
+    }
+    else if (key == 'f' || key == 'F') { fillScanline = !fillScanline; statusMsg = fillScanline ? "Polygon fill: own scanline algorithm" : "Polygon fill: OpenGL"; }
+    else if (key == 'k' || key == 'K') { clipOn = !clipOn; statusMsg = clipOn ? "Clipping to viewport ON (Liang-Barsky / Sutherland-Hodgman)" : "Clipping to viewport OFF (window edge only)"; }
     else if (key == 'm' || key == 'M') { showDims = !showDims; statusMsg = showDims ? "Dimensions ON" : "Dimensions OFF"; }
     else if (sel >= 0) {
         Furniture& f = items[sel];

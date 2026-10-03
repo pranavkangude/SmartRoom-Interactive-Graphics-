@@ -33,6 +33,13 @@ extern float gridSize;                   // snap step in feet
 extern bool  snapOn;
 extern bool  doorClear;                  // door-swing clearance zone on/off
 extern bool  showDims;                   // wall dimension labels on/off
+
+// rendering options
+enum LineAlgo { ALGO_GL, ALGO_DDA, ALGO_BRESENHAM, ALGO_COUNT };
+extern int   lineAlgo;                   // which line algorithm draws grid, walls, outlines
+extern bool  fillScanline;               // own scanline polygon fill (true) or OpenGL fill (false)
+extern bool  clipOn;                     // clip the scene to the canvas viewport
+const float HUD_H = 84.0f;               // height (pixels) of the text area at the top
 extern int   hoverBtn;                   // palette button under the mouse (-1 = none)
 
 const float PALETTE_W = 130.0f;          // width (pixels) of the left furniture palette

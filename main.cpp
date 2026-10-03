@@ -6,7 +6,9 @@
 //            collision (boundary, SAT)    room (floor, grid, door, window)
 //            furniture (shapes)           interaction (mouse/keyboard)
 //            history (undo/redo)          fileio (save/load)
-//            ui (HUD)                     gfx (drawing helpers)
+//            ui (HUD)                     gfx (drawing pipeline)
+//            matrix (3x3 homogeneous)     clip (Liang-Barsky, Sutherland-Hodgman)
+//            raster (DDA, Bresenham, scanline fill)
 //
 //  Build:  see build.bat or README.md
 // ============================================================
@@ -15,6 +17,7 @@
 #include <iostream>
 #include "common.h"
 #include "transform.h"
+#include "gfx.h"
 #include "room.h"
 #include "furniture.h"
 #include "ui.h"
@@ -26,14 +29,21 @@ void display() {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    glPushMatrix();
-    glTranslatef(offX, offY, 0);          // world (feet) -> screen (pixels), with zoom/pan
-    glScalef(scaleF, scaleF, 1);
+    // scene: our own matrices + clipping to the canvas (right of palette, below the HUD text)
+    if (clipOn) gfxSetClip(PALETTE_W, 0, (float)winW, winH - HUD_H);
+    else        gfxSetClip(0, 0, (float)winW, (float)winH);
+    gfxSetCTM(viewMatrix());              // world (feet) -> screen (pixels), with zoom/pan
     drawRoom();
     if (showDims) drawDimensions();
     for (int i = 0; i < (int)items.size(); i++) drawFurniture(i);
-    glPopMatrix();
 
+    // user interface in plain screen coordinates
+    gfxSetCTM(matIdentity());
+    gfxSetClip(0, 0, (float)winW, (float)winH);
+    if (clipOn) {                         // show the top edge of the clip window
+        glColor3f(0.65f, 0.65f, 0.72f);
+        gfxLine(PALETTE_W, winH - HUD_H, (float)winW, winH - HUD_H, 1);
+    }
     drawPalette();
     drawHUD();
     glutSwapBuffers();                    // double buffering
