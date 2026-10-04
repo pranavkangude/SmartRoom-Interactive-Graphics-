@@ -3,13 +3,15 @@
 #include "common.h"
 #include "gfx.h"
 #include "furniture.h"
+#include "view3d.h"
+#include "roomshape.h"
 #include <GL/freeglut.h>
 #include <cstdio>
 using namespace std;
 
 // ---- palette geometry (screen pixels, origin bottom-left) ----
 static const float BTN_X = 10.0f, BTN_W = PALETTE_W - 20.0f, BTN_H = 36.0f, BTN_GAP = 8.0f;
-static const char* ACTION_LABELS[BTN_COUNT - BTN_UNDO] = {"Undo", "Redo", "Save", "Load", "Clear"};
+static const char* ACTION_LABELS[BTN_COUNT - BTN_UNDO] = {"Undo", "Redo", "Save", "Load", "Clear", "Auto-arrange"};
 
 static float btnTop(int i) {
     float y = winH - 112.0f - i * (BTN_H + BTN_GAP);
@@ -64,22 +66,25 @@ void drawHUD() {
     float used = 0;
     for (auto& f : items)
         used += (f.type == TABLE) ? PI / 4 * f.w * f.h : f.w * f.h;
-    float freePct = 100.0f * (1.0f - used / (roomW * roomL));
+    float freePct = 100.0f * (1.0f - used / roomArea);
 
     glColor3f(0, 0, 0);
     char buf[240];
     snprintf(buf, sizeof buf,
-             "SmartRoom | Room: %.1f x %.1f ft | Items: %d | Free floor: %.1f%% | Zoom: %d%% | Snap: %s | Door zone: %s",
-             roomW, roomL, (int)items.size(), freePct, (int)(zoom * 100),
+             "SmartRoom | Room: %s | Items: %d | Free floor: %.1f%% | Zoom: %d%% | Snap: %s | Door zone: %s",
+             roomShapeText().c_str(), (int)items.size(), freePct, (int)(zoom * 100),
              snapOn ? "ON" : "OFF", doorClear ? "ON" : "OFF");
     drawText(15, winH - 22, buf);
     drawText(15, winH - 40,
-             "ADD: click the palette or keys 1-6 | EDIT: drag move, R rotate 90, E rotate 15, +/- scale, X/Del delete, C clear");
+             "ADD: click the palette or keys 1-6 | EDIT: drag move, R rotate 90, E rotate 15, +/- scale, X/Del delete, C clear, A auto-arrange");
     drawText(15, winH - 58,
-             "U/Y undo/redo | S/L save/load | wheel or Z/O zoom, right-drag or arrows pan, 0 reset | G snap, D door zone, M dimensions, Esc quit");
+             "U/Y undo/redo | S/L save/load | wheel or Z/O zoom, right-drag or arrows pan, 0 reset | G snap, D door zone, M dimensions, N room shape, Esc quit");
     static const char* ALGO_NAMES[ALGO_COUNT] = {"OpenGL lines", "DDA", "Bresenham"};
-    snprintf(buf, sizeof buf, "RENDER:  Line algorithm [B]: %s  |  Polygon fill [F]: %s  |  Clip to viewport [K]: %s",
-             ALGO_NAMES[lineAlgo], fillScanline ? "own scanline" : "OpenGL", clipOn ? "ON" : "OFF");
+    if (view3D)
+        snprintf(buf, sizeof buf, "VIEW [V]: 3D preview  (drag = orbit, wheel = zoom, arrows = rotate, 0 = reset camera)  |  press V to return to the 2D plan");
+    else
+        snprintf(buf, sizeof buf, "VIEW [V]: 2D plan  |  Line [B]: %s  |  Fill [F]: %s  |  Clip [K]: %s",
+                 ALGO_NAMES[lineAlgo], fillScanline ? "own scanline" : "OpenGL", clipOn ? "ON" : "OFF");
     glColor3f(0.35f, 0.1f, 0.5f);
     drawText(15, winH - 76, buf);
 

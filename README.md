@@ -9,6 +9,9 @@ SmartRoom lets you define a room to scale, place furniture in it, and rearrange 
 - Six furniture types drawn from OpenGL primitives: bed, sofa, round table, chair, wardrobe, desk
 - Clickable furniture palette (with Undo / Redo / Save / Load / Clear buttons) and hover highlighting
 - **Own graphics pipeline:** 3x3 homogeneous matrices for all transformations, Liang-Barsky line clipping, Sutherland-Hodgman polygon clipping, DDA and Bresenham line drawing, and scanline polygon fill (OpenGL is used only to plot pixels)
+- **3D preview** (`V`): perspective orbit camera, lit furniture models, cutaway walls with door and window, planar shadows
+- **Auto-arrange** (`A` or the palette button): rule-based placement of all furniture (bed away from the door with its headboard on a wall, wardrobe in a corner, sofa centred on a wall, desk near the window with a chair tucked in, table in the middle with chairs around it); one undo step
+- **Rectangular or L-shaped rooms** (notch cut from any of the 4 corners): the room is a polygon, so the boundary check, door and window placement, auto-arrange, 3D view and save/load all work for both
 - Wall dimension lines with length labels, and a live info line for the selected item (size, angle, position)
 - Add, select, move, rotate, scale and delete furniture
 - Snap-to-grid
@@ -29,6 +32,7 @@ SmartRoom lets you define a room to scale, place furniture in it, and rearrange 
 | Scale selected item | `+` / `-` |
 | Delete selected item | `X` or `Delete` |
 | Clear room | `C` |
+| Auto-arrange all furniture | `A` |
 | Undo / redo | `U` / `Y` (or `Ctrl+Z` / `Ctrl+Y`) |
 | Save / load layout | `S` / `L` |
 | Zoom | Mouse wheel, or `Z` / `O` |
@@ -37,6 +41,9 @@ SmartRoom lets you define a room to scale, place furniture in it, and rearrange 
 | Toggle snap-to-grid | `G` |
 | Toggle door clearance zone | `D` |
 | Toggle dimension labels | `M` |
+| Cycle room shape: rectangle / L (4 orientations) | `N` |
+| Switch 2D plan / 3D preview | `V` |
+| 3D: orbit / zoom / reset camera | Left-drag or arrows / wheel / `0` |
 | Line algorithm: OpenGL / DDA / Bresenham | `B` |
 | Polygon fill: own scanline / OpenGL | `F` |
 | Clip scene to viewport on / off | `K` |
@@ -51,8 +58,8 @@ SmartRoom lets you define a room to scale, place furniture in it, and rearrange 
 3. Compile (PowerShell; the quotes are needed because the folder name contains dots):
 
 ```
-g++ main.cpp state.cpp matrix.cpp clip.cpp raster.cpp gfx.cpp transform.cpp collision.cpp furniture.cpp room.cpp history.cpp fileio.cpp ui.cpp interaction.cpp -o smartroom_v4.exe "-Ifreeglut-mingw-3.8.0/freeglut/include" "-Lfreeglut-mingw-3.8.0/freeglut/lib" -lfreeglut -lopengl32 -lglu32
-.\smartroom_v4.exe
+g++ main.cpp state.cpp roomshape.cpp matrix.cpp clip.cpp raster.cpp gfx.cpp transform.cpp collision.cpp furniture.cpp room.cpp history.cpp fileio.cpp ui.cpp interaction.cpp view3d.cpp autoarrange.cpp -o smartroom_v7.exe "-Ifreeglut-mingw-3.8.0/freeglut/include" "-Lfreeglut-mingw-3.8.0/freeglut/lib" -lfreeglut -lopengl32 -lglu32
+.\smartroom_v7.exe
 ```
 
 Or simply run `.\build.bat`.
@@ -63,7 +70,7 @@ For a 64-bit compiler, use `freeglut/lib/x64` and the DLL from `bin/x64`.
 
 ```
 sudo apt install build-essential freeglut3-dev
-g++ main.cpp state.cpp matrix.cpp clip.cpp raster.cpp gfx.cpp transform.cpp collision.cpp furniture.cpp room.cpp history.cpp fileio.cpp ui.cpp interaction.cpp -o smartroom -lGL -lGLU -lglut
+g++ main.cpp state.cpp roomshape.cpp matrix.cpp clip.cpp raster.cpp gfx.cpp transform.cpp collision.cpp furniture.cpp room.cpp history.cpp fileio.cpp ui.cpp interaction.cpp view3d.cpp autoarrange.cpp -o smartroom -lGL -lGLU -lglut
 ./smartroom
 ```
 
@@ -75,17 +82,20 @@ The program asks for the room width and length in feet (for example `12` and `10
 |---|---|---|
 | `main.cpp` | Application | Window setup, display and reshape callbacks, main loop |
 | `common.h`, `state.cpp` | Shared data | `Furniture` and `Vec2` types, global state |
+| `roomshape.h/.cpp` | Room shape | Room outline as a polygon (rectangle or L), floor rectangles, area, centroid, door and window positions, point-in-polygon |
 | `matrix.h/.cpp` | Transformation | 3x3 homogeneous matrices: translate, rotate, scale, multiply, inverse |
 | `transform.h/.cpp` | Transformation | Model and view matrices, rotation about a centre, corners, picking, window-to-viewport mapping, zoom and pan |
 | `clip.h/.cpp` | Clipping | Liang-Barsky line clipping, Sutherland-Hodgman polygon clipping |
 | `raster.h/.cpp` | Rasterization | DDA, Bresenham, scanline polygon fill (compute pixels only) |
-| `collision.h/.cpp` | Collision | Boundary check, SAT overlap, door-swing clearance, `isValid` |
+| `collision.h/.cpp` | Collision | Boundary check against the room polygon (centre inside, and no wall cuts through, using Liang-Barsky in the furniture's local space), SAT overlap, door-swing clearance, `isValid` |
 | `room.h/.cpp` | Room | Floor, grid, walls, door, window and dimension lines |
 | `furniture.h/.cpp` | Furniture | Furniture sizes, colours and drawing |
 | `interaction.h/.cpp` | Interaction | Mouse, wheel and keyboard callbacks, adding items |
 | `history.h/.cpp` | Undo / redo | Snapshot stacks |
 | `fileio.h/.cpp` | File | Save and load `layout.txt` |
 | `ui.h/.cpp` | UI | Furniture palette (buttons, hover, hit testing), status and help text |
+| `view3d.h/.cpp` | 3D view | Perspective camera, lighting, furniture models, shadow projection matrix, clip planes |
+| `autoarrange.h/.cpp` | Auto-arrange | Greedy rule-based layout: candidate positions, validity filter, scoring per furniture type |
 | `gfx.h/.cpp` | Drawing pipeline | Local coordinates -> own matrix -> clip -> rasterize; rectangles, ellipses, text |
 
 ## Computer graphics concepts demonstrated
@@ -96,10 +106,14 @@ The program asks for the room width and length in feet (for example `12` and `10
 | Scanline polygon filling | Furniture shapes, floor, round table, door zone (`raster.cpp`) |
 | 2D translation, rotation, scaling with 3x3 homogeneous matrices | Moving, rotating and resizing furniture; composite transform `T * R * T^-1` (`matrix.cpp`, `transform.cpp`) |
 | Rotation about the object's centre | `rotateAbout()` = translate, rotate, translate back |
+| Computational geometry | Point-in-polygon (ray casting), polygon area and centroid (shoelace), L-shaped room boundary test |
 | Clipping | Liang-Barsky for lines, Sutherland-Hodgman for polygons, against the canvas viewport (`clip.cpp`) |
 | Window-to-viewport mapping | World (feet) to screen (pixels), zoom and pan |
 | Collision detection (SAT) | Preventing overlap between rotated furniture |
 | Picking | Inverse model matrix maps the mouse point into the furniture's local space, then an axis-aligned rectangle test |
+| Perspective projection and camera | `gluPerspective` + orbit camera with `gluLookAt` (`view3d.cpp`) |
+| Lighting and shading | Ambient + diffuse light, smooth shading, per-face normals |
+| Planar shadows | Shadow projection matrix flattens each model onto the floor; clip planes keep shadows inside the room |
 | Event handling | Mouse, wheel, keyboard and special-key callbacks |
 | Double buffering | Smooth redraw with `glutSwapBuffers` |
 
@@ -111,9 +125,10 @@ The program asks for the room width and length in feet (for example `12` and `10
 - [x] Code split into modules (see Code structure)
 - [x] Furniture palette and wall dimension labels
 - [x] Own matrices, clipping and rasterization algorithms (stage 1 of the upgrades)
-- [ ] 3D preview with lighting
-- [ ] Rule-based auto-arrange
-- [ ] Report, screenshots and demo video
+- [x] 3D preview with lighting
+- [x] Rule-based auto-arrange
+- [x] L-shaped rooms
+- [ ] Testing, report, screenshots and demo video
 
 ## Algorithm unit tests
 
@@ -122,6 +137,13 @@ The matrix, clipping and rasterization code does not depend on OpenGL, so it has
 ```
 g++ tests/test_algorithms.cpp matrix.cpp clip.cpp raster.cpp -I. -o test_algorithms_v1.exe
 .\test_algorithms_v1.exe
+```
+
+Room geometry tests (polygon, boundary check, door and window placement):
+
+```
+g++ tests/test_room.cpp state.cpp roomshape.cpp matrix.cpp clip.cpp transform.cpp collision.cpp -I. -o test_room_v1.exe
+.\test_room_v1.exe
 ```
 
 ## Limitations and future work

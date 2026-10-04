@@ -16,10 +16,20 @@ struct Furniture {
 };
 
 struct Vec2 { float x, y; };
+struct RectF { float x0, y0, x1, y1; };      // axis-aligned rectangle (world feet)
 
 // ---- window / room ----
 extern int   winW, winH;
-extern float roomW, roomL;               // room size in feet
+extern float roomW, roomL;               // bounding box of the room in feet
+
+// ---- room shape: rectangle, or L-shaped (a rectangle with a notch cut from one corner) ----
+extern float notchW, notchL;             // size of the notch (0 = plain rectangle)
+extern int   notchCorner;                // 0 top-right, 1 top-left, 2 bottom-right, 3 bottom-left
+extern std::vector<Vec2>  roomPoly;      // room outline, counter-clockwise
+extern std::vector<RectF> floorRects;    // the outline split into 1 or 2 rectangles
+extern float roomArea, roomCx, roomCy;   // area and centroid of the room
+extern float doorX;                      // hinge x of the door (on the bottom wall, y = 0)
+extern float winX0, winX1;               // window extent on the top wall (y = roomL)
 
 // ---- view: window-to-viewport mapping with zoom and pan ----
 extern float baseScale, baseOffX, baseOffY;   // "fit room in window" view
@@ -44,8 +54,8 @@ extern int   hoverBtn;                   // palette button under the mouse (-1 =
 
 const float PALETTE_W = 130.0f;          // width (pixels) of the left furniture palette
 
-// door (bottom wall): hinge at DOOR_X, opening width DOOR_W, swings into the room
-const float DOOR_X = 1.5f, DOOR_W = 3.0f;
+// door (bottom wall): hinge at doorX, opening width DOOR_W, swings into the room
+const float DOOR_W = 3.0f;
 
 // ---- layout and interaction state ----
 extern std::vector<Furniture> items;

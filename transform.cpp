@@ -42,13 +42,15 @@ void applyView() {
 
 // Window-to-viewport mapping: fit the room inside the area right of the palette.
 void computeView() {
-    const float margin = 70.0f;
+    const float margin = 70.0f;                      // left/right space (dimension labels)
+    const float bottomSpace = 55.0f, topSpace = 40.0f;
     float availW = winW - PALETTE_W;
+    float availH = winH - HUD_H - topSpace - bottomSpace;
     float sx = (availW - 2 * margin) / roomW;
-    float sy = (winH - 2 * margin) / roomL;
+    float sy = availH / roomL;
     baseScale = max(min(sx, sy), 1.0f);
     baseOffX = PALETTE_W + (availW - roomW * baseScale) / 2.0f;
-    baseOffY = (winH - roomL * baseScale) / 2.0f - 25.0f;
+    baseOffY = bottomSpace + (availH - roomL * baseScale) / 2.0f;
     applyView();
 }
 

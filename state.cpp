@@ -4,6 +4,14 @@
 int   winW = 1000, winH = 700;
 float roomW = 12.0f, roomL = 10.0f;
 
+float notchW = 0, notchL = 0;
+int   notchCorner = 0;
+std::vector<Vec2>  roomPoly;
+std::vector<RectF> floorRects;
+float roomArea = 120.0f, roomCx = 6.0f, roomCy = 5.0f;
+float doorX = 1.5f;
+float winX0 = 4.0f, winX1 = 8.0f;
+
 float baseScale = 1, baseOffX = 0, baseOffY = 0;
 float zoom = 1, panX = 0, panY = 0;
 float scaleF = 1, offX = 0, offY = 0;

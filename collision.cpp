@@ -1,17 +1,26 @@
 // collision.cpp - Collision Module
 #include "collision.h"
 #include "transform.h"
+#include "clip.h"
 #include <cmath>
 #include <algorithm>
 using namespace std;
 
+// The furniture rectangle lies inside the (possibly L-shaped) room polygon when
+//   1) its centre is inside the polygon, and
+//   2) no wall (polygon edge) passes through the inside of the rectangle.
+// Test 2 maps every wall into the furniture's local space (inverse model matrix) and
+// clips it against the local rectangle with Liang-Barsky; a small shrink lets items touch walls.
 bool insideRoom(const Furniture& f) {
-    Vec2 c[4];
-    getCorners(f, c);
-    const float e = 0.001f;
-    for (int i = 0; i < 4; i++)
-        if (c[i].x < -e || c[i].x > roomW + e || c[i].y < -e || c[i].y > roomL + e)
-            return false;
+    if (!pointInPolygon({f.x, f.y}, roomPoly)) return false;
+    Mat3 inv = matInverse(modelMatrix(f));
+    float hw = f.w / 2 - 0.001f, hh = f.h / 2 - 0.001f;
+    int n = (int)roomPoly.size();
+    for (int i = 0; i < n; i++) {
+        Vec2 a = matApply(inv, roomPoly[i]);
+        Vec2 b = matApply(inv, roomPoly[(i + 1) % n]);
+        if (clipLineLB(a.x, a.y, b.x, b.y, -hw, -hh, hw, hh)) return false;   // wall cuts through
+    }
     return true;
 }
 
@@ -36,8 +45,6 @@ bool satOverlap(const Furniture& a, const Furniture& b) {
     return true; // no separating axis -> overlap
 }
 
-bool hasDoor() { return roomW >= 6; }
-
 // Door-swing clearance: quarter disc (radius DOOR_W) swept by the door leaf.
 // Sample the quarter disc and test whether any sample lies inside the furniture.
 bool doorBlocked(const Furniture& f) {
@@ -47,7 +54,7 @@ bool doorBlocked(const Furniture& f) {
     for (float x = 0; x <= DOOR_W; x += 0.25f)
         for (float y = 0; y <= DOOR_W; y += 0.25f) {
             if (x * x + y * y > DOOR_W * DOOR_W) continue;
-            Vec2 q = matApply(inv, {DOOR_X + x, y});
+            Vec2 q = matApply(inv, {doorX + x, y});
             if (fabsf(q.x) <= hw && fabsf(q.y) <= hh) return true;
         }
     return false;

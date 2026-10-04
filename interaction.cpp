@@ -7,6 +7,9 @@
 #include "history.h"
 #include "fileio.h"
 #include "ui.h"
+#include "view3d.h"
+#include "autoarrange.h"
+#include "roomshape.h"
 #include <GL/freeglut.h>
 #include <cmath>
 #include <cstdlib>
@@ -60,6 +63,7 @@ static void paletteAction(int b) {
     else if (b == BTN_SAVE) saveLayout();
     else if (b == BTN_LOAD) loadLayout();
     else if (b == BTN_CLEAR) clearRoom();
+    else if (b == BTN_AUTO) autoArrange();
 }
 
 void passiveMotion(int mx, int my) {
@@ -81,6 +85,13 @@ void mouse(int button, int state, int mx, int my) {
         int b = paletteHit(mx, my);
         if (b >= 0) paletteAction(b);
         glutPostRedisplay();
+        return;
+    }
+
+    // 3D preview: left drag orbits the camera instead of editing
+    if (view3D) {
+        orbiting = (state == GLUT_DOWN);
+        lastMX = mx; lastMY = my;
         return;
     }
     Vec2 p = toWorld(mx, my);
@@ -118,6 +129,14 @@ void mouse(int button, int state, int mx, int my) {
 }
 
 void motion(int mx, int my) {
+    if (view3D) {
+        if (orbiting) {
+            orbitCamera(-0.4f * (mx - lastMX), 0.4f * (my - lastMY));
+            lastMX = mx; lastMY = my;
+            glutPostRedisplay();
+        }
+        return;
+    }
     if (panning) {
         panX += (float)(mx - lastMX);
         panY -= (float)(my - lastMY);
@@ -137,11 +156,20 @@ void motion(int mx, int my) {
 }
 
 void wheel(int, int dir, int mx, int my) {
+    if (view3D) { zoomCamera(dir > 0 ? 1.0f / 1.1f : 1.1f); glutPostRedisplay(); return; }
     zoomAt(mx, my, dir > 0 ? 1.1f : 1.0f / 1.1f);
     glutPostRedisplay();
 }
 
 void special(int key, int, int) {
+    if (view3D) {
+        if      (key == GLUT_KEY_LEFT)  orbitCamera(-6, 0);
+        else if (key == GLUT_KEY_RIGHT) orbitCamera(6, 0);
+        else if (key == GLUT_KEY_UP)    orbitCamera(0, 4);
+        else if (key == GLUT_KEY_DOWN)  orbitCamera(0, -4);
+        glutPostRedisplay();
+        return;
+    }
     const float step = 30.0f;
     if      (key == GLUT_KEY_LEFT)  panX -= step;
     else if (key == GLUT_KEY_RIGHT) panX += step;
@@ -162,8 +190,26 @@ void keyboard(unsigned char key, int, int) {
     else if (key == 'l' || key == 'L') loadLayout();
     else if (key == 'z' || key == 'Z') zoomAt(winW / 2, winH / 2, 1.15f);
     else if (key == 'o' || key == 'O') zoomAt(winW / 2, winH / 2, 1.0f / 1.15f);
-    else if (key == '0') { zoom = 1; panX = panY = 0; applyView(); statusMsg = "View reset."; }
+    else if (key == 'v' || key == 'V') {
+        view3D = !view3D;
+        orbiting = false; dragging = false;
+        statusMsg = view3D ? "3D preview: drag to orbit, wheel to zoom. Edit in the 2D plan (V to switch back)."
+                           : "2D plan view.";
+    }
+    else if (key == '0') {
+        if (view3D) { resetCamera3D(); statusMsg = "3D camera reset."; }
+        else        { zoom = 1; panX = panY = 0; applyView(); statusMsg = "View reset."; }
+    }
     else if (key == 'c' || key == 'C') clearRoom();
+    else if (key == 'a' || key == 'A') autoArrange();
+    else if (key == 'n' || key == 'N') {
+        if (cycleRoomShape()) {
+            computeView();
+            statusMsg = "Room shape: " + roomShapeText() + ". Items that no longer fit turn red - press A to auto-arrange.";
+        } else {
+            statusMsg = "Room is too small for an L shape (needs at least 7 x 7 ft).";
+        }
+    }
     else if (key == 'b' || key == 'B') {
         lineAlgo = (lineAlgo + 1) % ALGO_COUNT;
         static const char* names[ALGO_COUNT] = {"OpenGL", "DDA", "Bresenham"};
